@@ -15,12 +15,22 @@ wsServer.on('connection', socket => {
     const json = JSON.parse(data);
 
     if (json.requestType == 'subscribe') {
-      const subscribers = subscriptions[json.id] || [];
+      subscriptions[json.id] = subscriptions[json.id] || {
+        channel_name: json.channel_name,
+        subscribers: []
+      };
+      const subscribers = subscriptions[json.id].subscribers;
       subscribers.push(socket);
-      subscriptions[json.id] = subscribers;
-      console.log(subscriptions);
+      subscriptions[json.id].subscribers = subscribers;
+      const subscriptionConfirmation = JSON.stringify({
+        id: json.id,
+        channel_name: subscriptions[json.id].channel_name,
+        requestType: 'subscriptionConfirmation'
+      });
+      const newBuffer = Buffer.from(subscriptionConfirmation, 'utf-8');
+      socket.send(newBuffer);
     } else if (json.requestType == 'chatMessage') {
-      subscriptions[json.channel].forEach((subscriber) => {
+      subscriptions[json.channel].subscribers.forEach((subscriber) => {
         if (subscriber == socket) { return; }
 
         subscriber.send(data);
@@ -31,11 +41,11 @@ wsServer.on('connection', socket => {
   socket.on('close', () => {
     const channels = Object.keys(subscriptions);
     channels.forEach((channel) => {
-      const index = subscriptions[channel].indexOf(socket);
+      const index = subscriptions[channel].subscribers.indexOf(socket);
       if (index > -1) {
-        subscriptions[channel].splice(index, 1);
+        subscriptions[channel].subscribers.splice(index, 1);
 
-        if (!subscriptions[channel].length) {
+        if (!subscriptions[channel].subscribers.length) {
           delete subscriptions[channel];
         }
       }
@@ -49,7 +59,8 @@ const channelIndex = (request, response) => {
   const channelList = Object.keys(subscriptions).map((channel) => {
     return {
       id: channel,
-      user_count: subscriptions[channel].length
+      user_count: subscriptions[channel].subscribers.length,
+      channel_name: subscriptions[channel].channel_name
     }
   });
   response.status(200).json(channelList);
